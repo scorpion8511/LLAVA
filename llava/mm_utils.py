@@ -33,10 +33,9 @@ def process_images(images, image_processor, model_cfg):
             for image in images
         ]
     processed = image_processor(
-        images, return_tensors=None, padding=True
+        images, return_tensors="pt", padding=True
     )["pixel_values"]
-    processed = [torch.from_numpy(img) for img in processed]
-    return torch.stack(processed)
+    return processed
 
 
 def tokenizer_image_token(prompt, tokenizer, image_token_index=IMAGE_TOKEN_INDEX, return_tensors=None):
