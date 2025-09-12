@@ -32,10 +32,11 @@ def process_images(images, image_processor, model_cfg):
             expand2square(image, tuple(int(x * 255) for x in image_processor.image_mean))
             for image in images
         ]
-    processed = image_processor(
-        images, return_tensors="pt", padding=True
-    )["pixel_values"]
-    return processed
+    tensors = []
+    for image in images:
+        tensor = image_processor(image, return_tensors="pt")["pixel_values"][0]
+        tensors.append(tensor)
+    return torch.stack(tensors, dim=0)
 
 
 def tokenizer_image_token(prompt, tokenizer, image_token_index=IMAGE_TOKEN_INDEX, return_tensors=None):
