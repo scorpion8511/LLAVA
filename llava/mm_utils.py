@@ -3,7 +3,7 @@ from io import BytesIO
 import base64
 
 import torch
-import torchvision.transforms as T
+import torchvision.transforms.functional as F
 from torchvision.transforms import InterpolationMode
 from transformers import StoppingCriteria
 from llava.constants import IMAGE_TOKEN_INDEX
@@ -40,13 +40,13 @@ def process_images(images, image_processor, model_cfg):
     crop_size = getattr(image_processor, "crop_size", size)
     if isinstance(crop_size, dict):
         crop_size = (crop_size.get("height"), crop_size.get("width"))
-    transform = T.Compose([
-        T.Resize(size, interpolation=InterpolationMode.BICUBIC),
-        T.CenterCrop(crop_size),
-        T.ToTensor(),
-        T.Normalize(mean=image_processor.image_mean, std=image_processor.image_std),
-    ])
-    tensors = [transform(image) for image in images]
+    tensors = []
+    for image in images:
+        image = F.resize(image, size, interpolation=InterpolationMode.BICUBIC)
+        image = F.center_crop(image, crop_size)
+        image = F.pil_to_tensor(image).float().div(255)
+        image = F.normalize(image, mean=image_processor.image_mean, std=image_processor.image_std)
+        tensors.append(image)
     return torch.stack(tensors, dim=0)
 
 
