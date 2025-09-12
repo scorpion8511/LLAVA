@@ -40,11 +40,21 @@ def process_images(images, image_processor, model_cfg):
     crop_size = getattr(image_processor, "crop_size", size)
     if isinstance(crop_size, dict):
         crop_size = (crop_size.get("height"), crop_size.get("width"))
+    def pil_to_tensor_no_numpy(img: Image.Image) -> torch.Tensor:
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        w, h = img.size
+        c = len(img.getbands())
+        buf = memoryview(img.tobytes())
+        tensor = torch.frombuffer(buf, dtype=torch.uint8)
+        tensor = tensor.view(h, w, c).permute(2, 0, 1).to(torch.float32).div(255)
+        return tensor
+
     tensors = []
     for image in images:
         image = F.resize(image, size, interpolation=InterpolationMode.BICUBIC)
         image = F.center_crop(image, crop_size)
-        image = F.pil_to_tensor(image).float().div(255)
+        image = pil_to_tensor_no_numpy(image)
         image = F.normalize(image, mean=image_processor.image_mean, std=image_processor.image_std)
         tensors.append(image)
     return torch.stack(tensors, dim=0)
