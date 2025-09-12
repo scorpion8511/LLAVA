@@ -3,6 +3,8 @@ from io import BytesIO
 import base64
 
 import torch
+import torchvision.transforms.functional as F
+from torchvision.transforms import InterpolationMode
 from transformers import StoppingCriteria
 from llava.constants import IMAGE_TOKEN_INDEX
 
@@ -27,17 +29,35 @@ def expand2square(pil_img, background_color):
 
 def process_images(images, image_processor, model_cfg):
     image_aspect_ratio = getattr(model_cfg, "image_aspect_ratio", None)
-    new_images = []
     if image_aspect_ratio == 'pad':
-        for image in images:
-            image = expand2square(image, tuple(int(x*255) for x in image_processor.image_mean))
-            image = image_processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
-            new_images.append(image)
-    else:
-        return image_processor(images, return_tensors='pt')['pixel_values']
-    if all(x.shape == new_images[0].shape for x in new_images):
-        new_images = torch.stack(new_images, dim=0)
-    return new_images
+        images = [
+            expand2square(image, tuple(int(x * 255) for x in image_processor.image_mean))
+            for image in images
+        ]
+    size = getattr(image_processor, "size", None)
+    if isinstance(size, dict):
+        size = size.get("shortest_edge") or size.get("height") or size.get("width")
+    crop_size = getattr(image_processor, "crop_size", size)
+    if isinstance(crop_size, dict):
+        crop_size = (crop_size.get("height"), crop_size.get("width"))
+    def pil_to_tensor_no_numpy(img: Image.Image) -> torch.Tensor:
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        w, h = img.size
+        c = len(img.getbands())
+        buf = memoryview(img.tobytes())
+        tensor = torch.frombuffer(buf, dtype=torch.uint8)
+        tensor = tensor.view(h, w, c).permute(2, 0, 1).to(torch.float32).div(255)
+        return tensor
+
+    tensors = []
+    for image in images:
+        image = F.resize(image, size, interpolation=InterpolationMode.BICUBIC)
+        image = F.center_crop(image, crop_size)
+        image = pil_to_tensor_no_numpy(image)
+        image = F.normalize(image, mean=image_processor.image_mean, std=image_processor.image_std)
+        tensors.append(image)
+    return torch.stack(tensors, dim=0)
 
 
 def tokenizer_image_token(prompt, tokenizer, image_token_index=IMAGE_TOKEN_INDEX, return_tensors=None):
