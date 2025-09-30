@@ -28,19 +28,26 @@ def expand2square(pil_img, background_color):
 def process_images(images, image_processor, model_cfg):
     image_aspect_ratio = getattr(model_cfg, "image_aspect_ratio", None)
     if image_aspect_ratio == 'pad':
-        images = [
-            expand2square(
+        processed_images = []
+        for image in images:
+            image = expand2square(
                 image,
                 tuple(int(x * 255) for x in image_processor.image_mean),
             )
-            for image in images
-        ]
+            processed = image_processor(
+                images=image,
+                return_tensors='pt',
+                padding=True,
+            )["pixel_values"][0]
+            processed_images.append(processed)
 
-    return image_processor(
-        images=images,
-        return_tensors='pt',
-        padding=True,
-    )['pixel_values']
+        if len(processed_images) == 1:
+            return processed_images[0].unsqueeze(0)
+        if all(t.shape == processed_images[0].shape for t in processed_images):
+            return torch.stack(processed_images, dim=0)
+        return processed_images
+
+    return image_processor(images=images, return_tensors='pt')["pixel_values"]
 
 
 def tokenizer_image_token(prompt, tokenizer, image_token_index=IMAGE_TOKEN_INDEX, return_tensors=None):
