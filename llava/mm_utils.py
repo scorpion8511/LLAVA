@@ -77,7 +77,11 @@ def _ensure_tensor(array_like):
     if isinstance(array_like, torch.Tensor):
         return array_like
     if isinstance(array_like, np.ndarray):
-        return torch.from_numpy(array_like)
+        # torch.from_numpy requires NumPy support in the PyTorch build, which may
+        # be unavailable in runtime environments that pin to NumPy 1.x wheels.
+        # Converting through Python lists avoids that dependency at the cost of
+        # an extra copy but keeps inference functional.
+        return torch.tensor(array_like.tolist(), dtype=torch.float32)
     if isinstance(array_like, list):
         return torch.tensor(array_like, dtype=torch.float32)
     if isinstance(array_like, (float, int)):
