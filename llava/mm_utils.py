@@ -2,6 +2,7 @@ from PIL import Image
 from io import BytesIO
 import base64
 
+import numpy as np
 import torch
 from transformers import StoppingCriteria
 from llava.constants import IMAGE_TOKEN_INDEX
@@ -36,18 +37,61 @@ def process_images(images, image_processor, model_cfg):
             )
             processed = image_processor(
                 images=[image],
-                return_tensors='pt',
+                return_tensors=None,
                 padding=True,
-            )["pixel_values"][0]
-            processed_images.append(processed)
+            )["pixel_values"]
+
+            if not isinstance(processed, (list, tuple)):
+                processed = [processed]
+
+            processed_images.extend(processed)
 
         if len(processed_images) == 1:
-            return processed_images[0].unsqueeze(0)
-        if all(t.shape == processed_images[0].shape for t in processed_images):
-            return torch.stack(processed_images, dim=0)
-        return processed_images
+            return _ensure_batch_tensor(processed_images[0])
 
-    return image_processor(images=images, return_tensors='pt')["pixel_values"]
+        tensor_list = [_ensure_tensor(img) for img in processed_images]
+
+        if all(t.shape == tensor_list[0].shape for t in tensor_list):
+            return torch.stack(tensor_list, dim=0)
+        return tensor_list
+
+    processed = image_processor(images=images, return_tensors=None)
+    pixel_values = processed["pixel_values"]
+
+    if isinstance(pixel_values, torch.Tensor):
+        return pixel_values
+
+    if not isinstance(pixel_values, (list, tuple)):
+        pixel_values = [pixel_values]
+
+    tensor_list = [_ensure_tensor(img) for img in pixel_values]
+
+    if len(tensor_list) == 1:
+        return tensor_list[0].unsqueeze(0)
+    if all(t.shape == tensor_list[0].shape for t in tensor_list):
+        return torch.stack(tensor_list, dim=0)
+    return tensor_list
+
+
+def _ensure_tensor(array_like):
+    if isinstance(array_like, torch.Tensor):
+        return array_like
+    if isinstance(array_like, np.ndarray):
+        return torch.from_numpy(array_like)
+    if isinstance(array_like, list):
+        return torch.tensor(array_like, dtype=torch.float32)
+    if isinstance(array_like, (float, int)):
+        return torch.tensor(array_like, dtype=torch.float32)
+    if hasattr(array_like, "tolist"):
+        return torch.tensor(array_like.tolist(), dtype=torch.float32)
+    raise TypeError(f"Unsupported image type: {type(array_like)!r}")
+
+
+def _ensure_batch_tensor(tensor):
+    tensor = _ensure_tensor(tensor)
+    if tensor.ndim == 3:
+        return tensor.unsqueeze(0)
+    return tensor
 
 
 def tokenizer_image_token(prompt, tokenizer, image_token_index=IMAGE_TOKEN_INDEX, return_tensors=None):
