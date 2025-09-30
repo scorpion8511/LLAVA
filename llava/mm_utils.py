@@ -35,7 +35,7 @@ def process_images(images, image_processor, model_cfg):
                 tuple(int(x * 255) for x in image_processor.image_mean),
             )
             processed = image_processor(
-                images=image,
+                images=[image],
                 return_tensors='pt',
                 padding=True,
             )["pixel_values"][0]
